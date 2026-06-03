@@ -22,16 +22,21 @@ var v *viper.Viper
 func initConfig(cmd *cobra.Command) {
 	v = viper.New()
 
-	osConfigPath, err := os.UserConfigDir()
-	if err != nil {
-		slog.Warn("error while getting user config dir", "error", err)
-	}
-	osConfigPath = filepath.Join(osConfigPath, "heroldo")
-	slog.Debug("os-dependent config path set", "os_dependent_config_path", osConfigPath)
+	configPath, _ := cmd.Flags().GetString("config")
+	if configPath != "" {
+		v.SetConfigFile(configPath)
+	} else {
+		osConfigDir, err := os.UserConfigDir()
+		if err != nil {
+			slog.Warn("error while getting user config dir", "error", err)
+		}
+		osConfigPath := filepath.Join(osConfigDir, "heroldo")
+		slog.Debug("os-dependent config path set", "os_dependent_config_path", osConfigPath)
 
-	v.SetConfigName("heroldo")
-	v.AddConfigPath(".")
-	v.AddConfigPath(osConfigPath)
+		v.SetConfigName("heroldo")
+		v.AddConfigPath(".")
+		v.AddConfigPath(osConfigPath)
+	}
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -143,6 +148,7 @@ func main() {
 		RunE: runServer,
 	}
 
+	rootCmd.Flags().StringP("config", "f", "", "Path to custom config file")
 	rootCmd.Flags().StringP("token", "t", "", "Discord bot token")
 	rootCmd.Flags().StringSliceP("channels", "c", nil, "Discord channel IDs (comma-separated or repeatable)")
 	rootCmd.Flags().IntP("port", "p", 8080, "HTTP server port")
