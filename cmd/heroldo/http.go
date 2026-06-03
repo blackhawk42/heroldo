@@ -11,6 +11,7 @@ import (
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/r/blackhawk42/heroldo/pkg/heroldo"
+	"github.com/r/blackhawk42/heroldo/pkg/set"
 )
 
 type SuccessResponse struct {
@@ -110,6 +111,8 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 
 		request.Text = text
 
+		request.Channels = set.NewSet(r.MultipartForm.Value["channels"]...)
+
 		for i, f := range files {
 			fi, err := f.Open()
 			if err != nil {
@@ -131,9 +134,8 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 			request.Files = append(request.Files, &heroldo.File{Name: f.Filename, ContentType: contentTypes[i], Spoiler: spoilers[i], Content: content})
 		}
 
-		logger.Info("sending request")
-
-		if err := sender.SendContext(r.Context(), request); err != nil {
+		sentChannels, err := sender.Send(r.Context(), request)
+		if err != nil {
 			w.WriteHeader(http.StatusRequestTimeout)
 			response, _ := json.Marshal(ErrorResponse{
 				ResponseCode: http.StatusRequestTimeout,
@@ -146,8 +148,12 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		response, _ := json.Marshal(SuccessResponse{ResponseCode: http.StatusOK, RequestID: request.RequestID, Channels: sender.Channels()})
+		logger.Info("request sent", "sent_channels", strings.Join(sentChannels, ","))
+
+		w.WriteHeader(http.StatusAccepted)
+		response, _ := json.Marshal(SuccessResponse{ResponseCode: http.StatusAccepted, RequestID: request.RequestID, Channels: sentChannels})
 		w.Write(response)
+
+		logger.Info("request complete")
 	})
 }

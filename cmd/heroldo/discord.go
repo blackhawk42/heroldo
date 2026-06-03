@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/r/blackhawk42/heroldo/pkg/heroldo"
+	"github.com/r/blackhawk42/heroldo/pkg/set"
 )
 
 type DiscordSender struct {
-	channels       []string
+	channels       set.Set[string]
 	discordSession *discordgo.Session
 	wg             *sync.WaitGroup
 	requests       chan heroldo.Request
@@ -24,7 +26,7 @@ func NewDiscordSender(concurrency int, session *discordgo.Session, channels []st
 	}
 
 	ds := &DiscordSender{
-		channels:       channels,
+		channels:       set.NewSet(channels...),
 		discordSession: session,
 		wg:             new(sync.WaitGroup),
 		requests:       make(chan heroldo.Request, concurrency),
@@ -38,16 +40,23 @@ func NewDiscordSender(concurrency int, session *discordgo.Session, channels []st
 	return ds
 }
 
-func (ds *DiscordSender) Send(request heroldo.Request) {
-	ds.requests <- request
+func (ds *DiscordSender) Channels() []string {
+	return slices.Collect(ds.channels.Members())
 }
 
-func (ds *DiscordSender) SendContext(ctx context.Context, request heroldo.Request) error {
+func (ds *DiscordSender) Send(ctx context.Context, request heroldo.Request) ([]string, error) {
+	var channels []string
+	if request.Channels.Len() == 0 {
+		channels = ds.Channels()
+	} else {
+		channels = slices.Collect(ds.channels.Intersection(request.Channels).Members())
+	}
+
 	select {
 	case ds.requests <- request:
-		return nil
+		return channels, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return channels, ctx.Err()
 	}
 }
 
@@ -70,10 +79,6 @@ func (ds *DiscordSender) Close(ctx context.Context) error {
 	}
 }
 
-func (ds *DiscordSender) Channels() []string {
-	return ds.channels
-}
-
 func (ds *DiscordSender) sendWorker() {
 	defer ds.wg.Done()
 
@@ -82,7 +87,12 @@ func (ds *DiscordSender) sendWorker() {
 	for request := range ds.requests {
 		requestLogger := workerLogger.With("request_id", request.RequestID)
 
-		for _, ch := range ds.channels {
+		for ch := range ds.channels.Members() {
+			if request.Channels.Len() != 0 && !request.Channels.Contains(ch) {
+				requestLogger.Debug("skipping channel, as it's not in request list", "channel", ch)
+				continue
+			}
+
 			messageSend := &discordgo.MessageSend{
 				Content: request.Text,
 			}
@@ -97,7 +107,7 @@ func (ds *DiscordSender) sendWorker() {
 
 			_, err := ds.discordSession.ChannelMessageSendComplex(ch, messageSend)
 			if err != nil {
-				requestLogger.Error("while sending message to discord", "channel", ch)
+				requestLogger.Error("while sending message to discord", "channel", ch, "error", err)
 				continue
 			}
 			requestLogger.Info("message sent", "channel", ch)

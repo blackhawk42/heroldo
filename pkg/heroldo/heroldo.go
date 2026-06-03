@@ -1,5 +1,7 @@
 package heroldo
 
+import "github.com/r/blackhawk42/heroldo/pkg/set"
+
 type File struct {
 	Content     []byte
 	ContentType string
@@ -19,4 +21,5 @@ type Request struct {
 	RequestID string
 	Text      string
 	Files     []*File
+	Channels  set.Set[string]
 }
