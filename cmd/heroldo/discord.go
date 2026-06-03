@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"sync"
@@ -78,7 +79,7 @@ func (ds *DiscordSender) sendWorker() {
 				messageSend.Files = append(messageSend.Files, &discordgo.File{
 					Name:        f.CompleteName(),
 					ContentType: f.ContentType,
-					Reader:      f.Content,
+					Reader:      bytes.NewReader(f.Content),
 				})
 			}
 

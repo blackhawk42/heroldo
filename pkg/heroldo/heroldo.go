@@ -1,11 +1,7 @@
 package heroldo
 
-import (
-	"io"
-)
-
 type File struct {
-	Content     io.Reader
+	Content     []byte
 	ContentType string
 	Name        string
 	Spoiler     bool

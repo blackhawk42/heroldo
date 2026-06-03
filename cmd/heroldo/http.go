@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,7 +128,7 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 				return
 			}
 
-			request.Files = append(request.Files, &heroldo.File{Name: f.Filename, ContentType: contentTypes[i], Spoiler: spoilers[i], Content: bytes.NewReader(content)})
+			request.Files = append(request.Files, &heroldo.File{Name: f.Filename, ContentType: contentTypes[i], Spoiler: spoilers[i], Content: content})
 		}
 
 		logger.Info("sending request")
