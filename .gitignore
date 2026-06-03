@@ -25,7 +25,10 @@
 go.work
 
 # Python test scripts
-*.py
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
 # Common image files
 *.jpg
