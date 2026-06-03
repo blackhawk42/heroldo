@@ -82,11 +82,6 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	defer session.Close()
 
 	sender := NewDiscordSender(concurrency, session, channelIDs)
-	defer func() {
-		if err := sender.Close(context.Background()); err != nil {
-			slog.Error("sender close error", "error", err)
-		}
-	}()
 
 	handler := RequestHandler(maxBodySize, sender)
 
