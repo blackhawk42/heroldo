@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/spf13/cobra"
@@ -66,6 +67,7 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	port := v.GetInt("port")
 	concurrency := v.GetInt("concurrency")
 	maxBodySize := v.GetInt64("max-body-size")
+	shutdownTimeout := time.Duration(v.GetInt("shutdown-timeout")) * time.Second
 
 	listenAddr := ":" + strconv.Itoa(port)
 
@@ -80,7 +82,11 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	defer session.Close()
 
 	sender := NewDiscordSender(concurrency, session, channelIDs)
-	defer sender.Close()
+	defer func() {
+		if err := sender.Close(context.Background()); err != nil {
+			slog.Error("sender close error", "error", err)
+		}
+	}()
 
 	handler := RequestHandler(maxBodySize, sender)
 
@@ -103,8 +109,15 @@ func runServer(cmd *cobra.Command, _ []string) error {
 
 	slog.Info("shutting down...")
 
-	if err := server.Shutdown(context.Background()); err != nil {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("HTTP server shutdown error", "error", err)
+	}
+
+	if err := sender.Close(shutdownCtx); err != nil {
+		slog.Error("discord sender close error", "error", err)
 	}
 
 	return nil
@@ -154,6 +167,7 @@ func main() {
 	rootCmd.Flags().IntP("port", "p", 8080, "HTTP server port")
 	rootCmd.Flags().IntP("concurrency", "w", 5, "Worker goroutine count")
 	rootCmd.Flags().Int64("max-body-size", 50<<20, "Maximum request body size in bytes")
+	rootCmd.Flags().Int("shutdown-timeout", 30, "Shutdown timeout in seconds")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

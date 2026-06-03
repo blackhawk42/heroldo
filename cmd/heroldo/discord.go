@@ -51,11 +51,23 @@ func (ds *DiscordSender) SendContext(ctx context.Context, request heroldo.Reques
 	}
 }
 
-func (ds *DiscordSender) Close() {
+func (ds *DiscordSender) Close(ctx context.Context) error {
 	ds.closeOnce.Do(func() {
 		close(ds.requests)
 	})
-	ds.wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		ds.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (ds *DiscordSender) Channels() []string {
