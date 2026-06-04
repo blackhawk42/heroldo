@@ -38,3 +38,6 @@ __pycache__/
 *.webp
 
 # End of https://www.toptal.com/developers/gitignore/api/go
+
+# Config files
+*.toml
