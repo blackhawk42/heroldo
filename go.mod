@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/bwmarrin/discordgo v0.29.0
+	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0

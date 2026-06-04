@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gabriel-vasile/mimetype"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/r/blackhawk42/heroldo/pkg/heroldo"
 	"github.com/r/blackhawk42/heroldo/pkg/set"
@@ -99,7 +100,11 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 
 		// Empty text and spoilers are acceptable, so no ok checking.
 		text := joinTexts(r.MultipartForm.Value["text"])
+		logger.Debug("request text parsed", "text", text)
+
 		spoilersString := r.MultipartForm.Value["spoilers"]
+		logger.Debug("request spoilers parsed", "spoilers", strings.Join(spoilersString, ","))
+
 		files := r.MultipartForm.File["files"]
 
 		if len(files) != len(spoilersString) {
@@ -111,34 +116,21 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 			return
 		}
 
-		contentTypes := r.MultipartForm.Value["content_types"]
-		if len(files) != len(contentTypes) {
-			w.WriteHeader(http.StatusBadRequest)
-			response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusBadRequest, Error: "number of files and content_types not equal"})
-			w.Write(response)
-
-			logger.Error("number of files and content_types not equal")
-			return
-		}
-
 		spoilers := make([]bool, 0, len(spoilersString))
 		for _, s := range spoilersString {
 			spoilers = append(spoilers, trueFalseParse(s))
-		}
-		if len(files) != len(spoilers) {
-			w.WriteHeader(http.StatusBadRequest)
-			response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusBadRequest, Error: "number of files and errors not equal"})
-			w.Write(response)
-
-			logger.Error("number of files and errors not equal")
-			return
 		}
 
 		request.Text = text
 
 		request.Channels = set.NewSet(r.MultipartForm.Value["channels"]...)
+		logger.Debug("request channels parsed", "request_channels", strings.Join(r.MultipartForm.Value["channels"], ","))
 
 		for i, f := range files {
+			fileLogger := logger.With("file_name", f.Filename)
+
+			fileLogger.Debug("processing file")
+
 			fi, err := f.Open()
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -156,7 +148,14 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 				return
 			}
 
-			request.Files = append(request.Files, &heroldo.File{Name: f.Filename, ContentType: contentTypes[i], Spoiler: spoilers[i], Content: content})
+			contentType := f.Header.Get("Content-Type")
+			if contentType == "" {
+				contentType = mimetype.Detect(content).String()
+				fileLogger.Debug("content type empty, autodetection required")
+			}
+
+			request.Files = append(request.Files, &heroldo.File{Name: f.Filename, ContentType: contentType, Spoiler: spoilers[i], Content: content})
+			fileLogger.Debug("file appended", "content_type", contentType, "spoilers", spoilers)
 		}
 
 		sentChannels, err := sender.Send(r.Context(), request)
