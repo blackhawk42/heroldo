@@ -97,7 +97,7 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 		logger.Debug("multiform parsed")
 		defer r.MultipartForm.RemoveAll()
 
-		// Empty text and spolers are acceptable, so no ok checking.
+		// Empty text and spoilers are acceptable, so no ok checking.
 		text := joinTexts(r.MultipartForm.Value["text"])
 		spoilersString := r.MultipartForm.Value["spoilers"]
 		files := r.MultipartForm.File["files"]
@@ -124,6 +124,14 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 		spoilers := make([]bool, 0, len(spoilersString))
 		for _, s := range spoilersString {
 			spoilers = append(spoilers, trueFalseParse(s))
+		}
+		if len(files) != len(spoilers) {
+			w.WriteHeader(http.StatusBadRequest)
+			response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusBadRequest, Error: "number of files and errors not equal"})
+			w.Write(response)
+
+			logger.Error("number of files and errors not equal")
+			return
 		}
 
 		request.Text = text
