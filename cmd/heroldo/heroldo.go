@@ -1,3 +1,4 @@
+// This files implements the main command line of the program.
 package main
 
 import (
@@ -20,6 +21,11 @@ import (
 
 var v *viper.Viper
 
+// initConfig loads configuration from a config file, environment variables,
+// and command-line flags using viper.
+//
+// It reads "heroldo" config files from the current directory and the OS-specific
+// config directory, then applies environment overrides and flag bindings.
 func initConfig(cmd *cobra.Command) {
 	v = viper.New()
 
@@ -52,6 +58,10 @@ func initConfig(cmd *cobra.Command) {
 	v.BindPFlags(cmd.Flags())
 }
 
+// runServer starts the HTTP server and the Discord session, creates a
+// DiscordSender worker pool, and blocks until SIGINT or SIGTERM is received.
+//
+// It then performs a graceful shutdown of both the HTTP server and the sender.
 func runServer(cmd *cobra.Command, _ []string) error {
 	token := v.GetString("token")
 	if token == "" {
@@ -118,8 +128,8 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// toStringSlice normalises the "channels" value across different sources:
-// CLI ([]string), config file list ([]any), and env var/comma-separated string.
+// toStringSlice normalises the channels value across different viper sources:
+// CLI ([]string), config file list ([]any), and env var (comma-separated string).
 func toStringSlice(v any) []string {
 	switch val := v.(type) {
 	case []string:
@@ -143,6 +153,9 @@ func toStringSlice(v any) []string {
 	}
 }
 
+// main sets up the root cobra command with all required flags and executes it.
+//
+// It configures structured logging to stderr before handling CLI arguments.
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 

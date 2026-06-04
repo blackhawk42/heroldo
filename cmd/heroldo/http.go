@@ -1,3 +1,5 @@
+// This file implements the HTTP handler that accepts multipart form uploads,
+// validates them, and passes requests to the Discord sender.
 package main
 
 import (
@@ -14,18 +16,25 @@ import (
 	"github.com/r/blackhawk42/heroldo/pkg/set"
 )
 
+// SuccessResponse is the JSON envelope returned when a request is
+// successfully accepted (HTTP 202 Accepted).
 type SuccessResponse struct {
 	ResponseCode int      `json:"response_code"`
 	RequestID    string   `json:"request_id"`
 	Channels     []string `json:"channels"`
 }
 
+// ErrorResponse is the JSON envelope returned when a request fails
+// validation or processing.
 type ErrorResponse struct {
 	ResponseCode int    `json:"response_code"`
 	RequestID    string `json:"request_id"`
 	Error        string `json:"error"`
 }
 
+// trueFalseParse is a simple helper to parse "true" and "false" type strings.
+//
+// Current behaviour: returns true when s is the string "true" and false with everything else.
 func trueFalseParse(s string) bool {
 	if s == "true" {
 		return true
@@ -34,10 +43,18 @@ func trueFalseParse(s string) bool {
 	}
 }
 
+// joinTexts is a helper to join multiple "text" fieldsin the multipart.
+//
+// Current behaviour: simply join them all with newline separators
 func joinTexts(txts []string) string {
 	return strings.Join(txts, "\n")
 }
 
+// RequestHandler returns an http.Handler that parses a multipart form request.
+// validates file/spoiler/content-type counts, and relays the content to the
+// Discord sender.
+//
+// It returns JSON responses with appropriate HTTP status codes.
 func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
