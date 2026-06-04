@@ -170,8 +170,8 @@ func main() {
 	}
 
 	rootCmd.Flags().StringP("config", "f", "", "Path to custom config file")
-	rootCmd.Flags().StringP("token", "t", "", "Discord bot token")
-	rootCmd.Flags().StringSliceP("channels", "c", nil, "Discord channel IDs (comma-separated or repeatable)")
+	rootCmd.Flags().StringP("token", "t", "", "Discord bot token (required)")
+	rootCmd.Flags().StringSliceP("channels", "c", nil, "Discord channel IDs (required; comma-separated or repeatable)")
 	rootCmd.Flags().IntP("port", "p", 8080, "HTTP server port")
 	rootCmd.Flags().IntP("concurrency", "w", 5, "Worker goroutine count")
 	rootCmd.Flags().Int64("max-body-size", 50<<20, "Maximum request body size in bytes")
