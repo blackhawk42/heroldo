@@ -42,6 +42,10 @@ func (s Set[T]) Members() iter.Seq[T] {
 	return maps.Keys(s.m)
 }
 
+func (s Set[T]) Delete(member T) {
+	delete(s.m, member)
+}
+
 func (s Set[T]) Intersection(other Set[T]) Set[T] {
 	result := NewSet[T]()
 
