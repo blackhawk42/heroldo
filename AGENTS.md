@@ -8,24 +8,20 @@ Discord bot that ingests HTTP multipart form data and relays it to Discord chann
 HTTP multipart POST  →  buffered chan heroldo.Request  →  N worker goroutines → discordgo Session
 ```
 
-- **`cmd/heroldo/`** — main package; HTTP handler (`http.go`), Discord sender workers (`discord.go`)
+- **`cmd/heroldo/`** — main package; HTTP handler (`http.go`), Discord sender workers (`discord.go`), CLI entrypoint (`heroldo.go`)
 - **`pkg/heroldo/`** — shared types (`Request`, `File`)
-
-`cmd/heroldo/heroldo.go` is a skeleton — `func main()` is empty (the package does not compile).
+- **`pkg/set/`** — generic `Set[T comparable]` with `Intersection`, `Members` (Go 1.26 iter.Seq)
 
 ## Current state
 
-- **git:** `master` branch, 2 commits (`7961472` initial, `b46eb15` content semantics). Working tree clean. Local `master` 1 ahead of `origin/master`.
-- **Build:** `go build ./...` fails — empty `main()`.
-- **Deps:** `go.mod` lists `discordgo`, `gonanoid`, `snowflake` etc., all marked `// indirect` (will fix after `main()` compiles). Run `go mod tidy` after implementing `main()`.
-- **Tests:** None.
-
-## TODO (inferred)
-
-- Implement `main()`: init `discordgo.Session`, create `DiscordSender`, register `RequestHandler`, HTTP server lifecycle, signal handling.
-- Add `.gitignore` to exclude `heroldo.exe`.
-- Run `go mod tidy` after compilation succeeds.
-- Add tests, CI, README, config.
+- **git:** `master` branch, 13 commits. Working tree has uncommitted comment-only changes to `pkg/heroldo/heroldo.go`. Untracked `cmd/testscript/` (Python test harness). Local `master` 8 ahead of `origin/master`.
+- **Build:** `go build ./...` succeeds. `go vet ./...` passes.
+- **`main()`:** Fully implemented — cobra CLI with viper config (file, env `HEROLDO_*`, flags), signal handling (SIGINT/SIGTERM), graceful HTTP server + DiscordSender shutdown with configurable timeout.
+- **Flags:** `--config/-f`, `--token/-t`, `--channels/-c`, `--port/-p` (default 8080), `--concurrency/-w` (default 5), `--max-body-size` (default 50 MB), `--shutdown-timeout` (default 30s).
+- **`.gitignore`:** Present (Go template + Python + images). `heroldo.exe` excluded from git.
+- **Deps:** `go.mod` lists `discordgo`, `gonanoid`, `cobra`, `viper`. `viper` transitive deps marked `// indirect`.
+- **Tests:** None in Go. `cmd/testscript/` has an untracked Python test script (`test_heroldo.py`) with a test image.
+- **CI, Makefile, Dockerfile, README:** None.
 
 ## Commands
 
