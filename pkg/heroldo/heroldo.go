@@ -1,7 +1,7 @@
 // Package heroldo defines the core types used by the heroldo Discord bot.
 package heroldo
 
-import "github.com/r/blackhawk42/heroldo/pkg/set"
+import "github.com/blackhawk42/heroldo/pkg/set"
 
 // File represents a file attached to a Request.
 type File struct {

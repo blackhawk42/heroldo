@@ -1,4 +1,4 @@
-module github.com/r/blackhawk42/heroldo
+module github.com/blackhawk42/heroldo
 
 go 1.26.1
 

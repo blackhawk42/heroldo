@@ -1,6 +1,6 @@
 // This file implements a worker-pool Discord sender that dequeues requests
 // from a buffered channel and posts them to the configured Discord channels.
-package main
+package discord
 
 import (
 	"bytes"
@@ -9,9 +9,9 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/blackhawk42/heroldo/pkg/heroldo"
+	"github.com/blackhawk42/heroldo/pkg/set"
 	"github.com/bwmarrin/discordgo"
-	"github.com/r/blackhawk42/heroldo/pkg/heroldo"
-	"github.com/r/blackhawk42/heroldo/pkg/set"
 )
 
 // DiscordSender manages a pool of worker goroutines that read from a buffered

@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	heroldodiscord "github.com/blackhawk42/heroldo/pkg/heroldo/discord"
+	heroldohttp "github.com/blackhawk42/heroldo/pkg/heroldo/http"
 	"github.com/bwmarrin/discordgo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -91,9 +93,9 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	}
 	defer session.Close()
 
-	sender := NewDiscordSender(concurrency, session, channelIDs)
+	sender := heroldodiscord.NewDiscordSender(concurrency, session, channelIDs)
 
-	handler := RequestHandler(maxBodySize, sender)
+	handler := heroldohttp.RequestHandler(maxBodySize, sender)
 
 	server := &http.Server{
 		Addr:    listenAddr,

@@ -1,6 +1,6 @@
 // This file implements the HTTP handler that accepts multipart form uploads,
 // validates them, and passes requests to the Discord sender.
-package main
+package http
 
 import (
 	"encoding/json"
@@ -11,10 +11,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/blackhawk42/heroldo/pkg/heroldo"
+	"github.com/blackhawk42/heroldo/pkg/heroldo/discord"
+	"github.com/blackhawk42/heroldo/pkg/set"
 	"github.com/gabriel-vasile/mimetype"
 	gonanoid "github.com/matoous/go-nanoid/v2"
-	"github.com/r/blackhawk42/heroldo/pkg/heroldo"
-	"github.com/r/blackhawk42/heroldo/pkg/set"
 )
 
 // SuccessResponse is the JSON envelope returned when a request is
@@ -72,7 +73,7 @@ func writeSuccess(w http.ResponseWriter, logger *slog.Logger, status int, reques
 // Discord sender.
 //
 // It returns JSON responses with appropriate HTTP status codes.
-func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
+func RequestHandler(maxBodySize int64, sender *discord.DiscordSender) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
