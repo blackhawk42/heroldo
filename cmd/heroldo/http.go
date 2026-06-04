@@ -51,6 +51,22 @@ func joinTexts(txts []string) string {
 	return strings.Join(txts, "\n")
 }
 
+// writeError writes an error JSON response with the given status code, logs
+// the message at Error level, and returns. The caller should return afterwards.
+func writeError(w http.ResponseWriter, logger *slog.Logger, status int, requestID, userMsg, logMsg string, logArgs ...any) {
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(ErrorResponse{ResponseCode: status, RequestID: requestID, Error: userMsg})
+	logger.Error(logMsg, logArgs...)
+}
+
+// writeSuccess writes a success JSON response with the given status code, logs
+// the message at Info level, and returns. The caller should return afterwards.
+func writeSuccess(w http.ResponseWriter, logger *slog.Logger, status int, requestID string, channels []string, logMsg string, logArgs ...any) {
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(SuccessResponse{ResponseCode: status, RequestID: requestID, Channels: channels})
+	logger.Info(logMsg, logArgs...)
+}
+
 // RequestHandler returns an http.Handler that parses a multipart form request.
 // validates file/spoiler/content-type counts, and relays the content to the
 // Discord sender.
@@ -65,11 +81,7 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 		var err error
 		request.RequestID, err = gonanoid.New()
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusInternalServerError, Error: "failed to generate ID for request"})
-			w.Write(response)
-
-			slog.Error("failed to generate ID for request")
+			writeError(w, slog.Default(), http.StatusInternalServerError, "", "failed to generate ID for request", "failed to generate ID for request")
 			return
 		}
 
@@ -80,19 +92,11 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 		if err != nil {
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
-				w.WriteHeader(http.StatusRequestEntityTooLarge)
-				response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusRequestEntityTooLarge, Error: "request body too large"})
-				w.Write(response)
-
-				logger.Error("request body too large", "error", err)
+				writeError(w, logger, http.StatusRequestEntityTooLarge, request.RequestID, "request body too large", "request body too large", "error", err)
 				return
 			}
 
-			w.WriteHeader(http.StatusBadRequest)
-			response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusBadRequest, Error: fmt.Sprintf("request failed to be parsed as a multiform request: %s", err)})
-			w.Write(response)
-
-			logger.Error("request failed to be parsed as a multiform request", "error", err)
+			writeError(w, logger, http.StatusBadRequest, request.RequestID, fmt.Sprintf("request failed to be parsed as a multiform request: %s", err), "request failed to be parsed as a multiform request", "error", err)
 			return
 		}
 		logger.Debug("multiform parsed")
@@ -108,11 +112,7 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 		files := r.MultipartForm.File["files"]
 
 		if len(files) != len(spoilersString) {
-			w.WriteHeader(http.StatusBadRequest)
-			response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusBadRequest, Error: "number of files and spoilers not equal"})
-			w.Write(response)
-
-			logger.Error("number of files and spoilers not equal")
+			writeError(w, logger, http.StatusBadRequest, request.RequestID, "number of files and spoilers not equal", "number of files and spoilers not equal")
 			return
 		}
 
@@ -133,18 +133,14 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 
 			fi, err := f.Open()
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusInternalServerError, Error: fmt.Sprintf("failed to open file from multipart: %s", f.Filename)})
-				w.Write(response)
+				writeError(w, fileLogger, http.StatusInternalServerError, request.RequestID, fmt.Sprintf("failed to open file from multipart: %s", f.Filename), "failed to open file from multipart")
 				return
 			}
 
 			content, err := io.ReadAll(fi)
 			fi.Close()
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				response, _ := json.Marshal(ErrorResponse{ResponseCode: http.StatusInternalServerError, Error: fmt.Sprintf("failed to read file from multipart: %s", f.Filename)})
-				w.Write(response)
+				writeError(w, fileLogger, http.StatusInternalServerError, request.RequestID, fmt.Sprintf("failed to read file from multipart: %s", f.Filename), "failed to read file from multipart")
 				return
 			}
 
@@ -160,24 +156,12 @@ func RequestHandler(maxBodySize int64, sender *DiscordSender) http.Handler {
 
 		sentChannels, err := sender.Send(r.Context(), request)
 		if err != nil {
-			w.WriteHeader(http.StatusRequestTimeout)
-			response, _ := json.Marshal(ErrorResponse{
-				ResponseCode: http.StatusRequestTimeout,
-				RequestID:    request.RequestID,
-				Error:        "request cancelled",
-			})
-			w.Write(response)
-
-			logger.Info("request cancelled")
+			writeError(w, logger, http.StatusRequestTimeout, request.RequestID, "request cancelled", "request cancelled")
 			return
 		}
 
 		logger.Info("request sent", "sent_channels", strings.Join(sentChannels, ","))
 
-		w.WriteHeader(http.StatusAccepted)
-		response, _ := json.Marshal(SuccessResponse{ResponseCode: http.StatusAccepted, RequestID: request.RequestID, Channels: sentChannels})
-		w.Write(response)
-
-		logger.Info("request complete")
+		writeSuccess(w, logger, http.StatusAccepted, request.RequestID, sentChannels, "request complete")
 	})
 }
