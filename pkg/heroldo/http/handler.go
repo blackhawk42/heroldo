@@ -146,9 +146,9 @@ func RequestHandler(maxBodySize int64, sender *discord.DiscordSender) http.Handl
 			}
 
 			contentType := f.Header.Get("Content-Type")
-			if contentType == "" {
+			if contentType == "" || contentType == "application/octet-stream" {
 				contentType = mimetype.Detect(content).String()
-				fileLogger.Debug("content type empty, autodetection required")
+				fileLogger.Debug("content type empty or generic application/octet-stream, autodetection attempted")
 			}
 
 			request.Files = append(request.Files, &heroldo.File{Name: f.Filename, ContentType: contentType, Spoiler: spoilers[i], Content: content})
