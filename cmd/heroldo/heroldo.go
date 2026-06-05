@@ -16,6 +16,7 @@ import (
 
 	heroldodiscord "github.com/blackhawk42/heroldo/pkg/heroldo/discord"
 	heroldohttp "github.com/blackhawk42/heroldo/pkg/heroldo/http"
+	"github.com/blackhawk42/heroldo/pkg/heroldo/registries"
 	"github.com/bwmarrin/discordgo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -95,7 +96,23 @@ func runServer(cmd *cobra.Command, _ []string) error {
 
 	sender := heroldodiscord.NewDiscordSender(concurrency, session, channelIDs)
 
-	handler := heroldohttp.RequestHandler(maxBodySize, sender)
+	var handler http.Handler
+	handler = heroldohttp.RequestHandler(maxBodySize, sender)
+
+	// Conditionally initialize token registry and wire handler, only if an
+	// authentication database is passed.
+	authDBPath := v.GetString("auth-db")
+	if authDBPath != "" {
+		registry, err := registries.NewBBoltTokenRegistry(authDBPath, nil, 0)
+		if err != nil {
+			return err
+		}
+		defer registry.Close()
+
+		handler = heroldohttp.TokenAuthMiddleware(handler, registry)
+	}
+
+	handler = heroldohttp.IdMiddleware(handler)
 
 	server := &http.Server{
 		Addr:    listenAddr,
@@ -174,6 +191,7 @@ func main() {
 	rootCmd.Flags().StringP("config", "f", "", "Path to custom config file")
 	rootCmd.Flags().StringP("token", "t", "", "Discord bot token (required)")
 	rootCmd.Flags().StringSliceP("channels", "c", nil, "Discord channel IDs (required; comma-separated or repeatable)")
+	rootCmd.Flags().String("auth-db", "", "Path to bbolt authentication database (optional; enables token auth)")
 	rootCmd.Flags().IntP("port", "p", 8080, "HTTP server port")
 	rootCmd.Flags().IntP("concurrency", "w", 5, "Worker goroutine count")
 	rootCmd.Flags().Int64("max-body-size", 50<<20, "Maximum request body size in bytes")
