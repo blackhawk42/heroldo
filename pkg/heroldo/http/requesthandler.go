@@ -3,7 +3,6 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,24 +14,7 @@ import (
 	"github.com/blackhawk42/heroldo/pkg/heroldo/discord"
 	"github.com/blackhawk42/heroldo/pkg/set"
 	"github.com/gabriel-vasile/mimetype"
-	gonanoid "github.com/matoous/go-nanoid/v2"
 )
-
-// SuccessResponse is the JSON envelope returned when a request is
-// successfully accepted (HTTP 202 Accepted).
-type SuccessResponse struct {
-	ResponseCode int      `json:"response_code"`
-	RequestID    string   `json:"request_id"`
-	Channels     []string `json:"channels"`
-}
-
-// ErrorResponse is the JSON envelope returned when a request fails
-// validation or processing.
-type ErrorResponse struct {
-	ResponseCode int    `json:"response_code"`
-	RequestID    string `json:"request_id"`
-	Error        string `json:"error"`
-}
 
 // trueFalseParse is a simple helper to parse "true" and "false" type strings.
 //
@@ -52,22 +34,6 @@ func joinTexts(txts []string) string {
 	return strings.Join(txts, "\n")
 }
 
-// writeError writes an error JSON response with the given status code, logs
-// the message at Error level, and returns. The caller should return afterwards.
-func writeError(w http.ResponseWriter, logger *slog.Logger, status int, requestID, userMsg, logMsg string, logArgs ...any) {
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(ErrorResponse{ResponseCode: status, RequestID: requestID, Error: userMsg})
-	logger.Error(logMsg, logArgs...)
-}
-
-// writeSuccess writes a success JSON response with the given status code, logs
-// the message at Info level, and returns. The caller should return afterwards.
-func writeSuccess(w http.ResponseWriter, logger *slog.Logger, status int, requestID string, channels []string, logMsg string, logArgs ...any) {
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(SuccessResponse{ResponseCode: status, RequestID: requestID, Channels: channels})
-	logger.Info(logMsg, logArgs...)
-}
-
 // RequestHandler returns an http.Handler that parses a multipart form request.
 // validates file/spoiler/content-type counts, and relays the content to the
 // Discord sender.
@@ -80,11 +46,12 @@ func RequestHandler(maxBodySize int64, sender *discord.DiscordSender) http.Handl
 		request := heroldo.Request{}
 
 		var err error
-		request.RequestID, err = gonanoid.New()
-		if err != nil {
-			writeError(w, slog.Default(), http.StatusInternalServerError, "", "failed to generate ID for request", "failed to generate ID for request")
+		requestID, ok := r.Context().Value("request_id").(string)
+		if !ok {
+			writeError(w, slog.Default(), http.StatusInternalServerError, "", "request context missing request_id", "request context missing request_id")
 			return
 		}
+		request.RequestID = requestID
 
 		logger := slog.With("request_id", request.RequestID)
 
