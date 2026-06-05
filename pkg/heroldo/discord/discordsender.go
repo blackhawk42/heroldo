@@ -14,6 +14,13 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// queuedRequest wraps a heroldo.Request with the resolved list of target
+// channel IDs, computed once by Send before enqueueing.
+type queuedRequest struct {
+	request          heroldo.Request
+	resolvedChannels []string
+}
+
 // DiscordSender manages a pool of worker goroutines that read from a buffered
 // channel and send requests to the configured Discord channels.
 //
@@ -22,7 +29,7 @@ type DiscordSender struct {
 	channels       set.Set[string]
 	discordSession *discordgo.Session
 	wg             *sync.WaitGroup
-	requests       chan heroldo.Request
+	requests       chan queuedRequest
 	closeOnce      sync.Once
 }
 
@@ -39,7 +46,7 @@ func NewDiscordSender(concurrency int, session *discordgo.Session, channels []st
 		channels:       set.NewSet(channels...),
 		discordSession: session,
 		wg:             new(sync.WaitGroup),
-		requests:       make(chan heroldo.Request, concurrency),
+		requests:       make(chan queuedRequest, concurrency),
 	}
 
 	for range concurrency {
@@ -67,8 +74,10 @@ func (ds *DiscordSender) Send(ctx context.Context, request heroldo.Request) ([]s
 		channels = slices.Collect(ds.channels.Intersection(request.Channels).Members())
 	}
 
+	qr := queuedRequest{request: request, resolvedChannels: channels}
+
 	select {
-	case ds.requests <- request:
+	case ds.requests <- qr:
 		return channels, nil
 	case <-ctx.Done():
 		return channels, ctx.Err()
@@ -103,20 +112,15 @@ func (ds *DiscordSender) sendWorker() {
 
 	workerLogger := slog.With()
 
-	for request := range ds.requests {
-		requestLogger := workerLogger.With("request_id", request.RequestID)
+	for qr := range ds.requests {
+		requestLogger := workerLogger.With("request_id", qr.request.RequestID)
 
-		for ch := range ds.channels.Members() {
-			if request.Channels.Len() != 0 && !request.Channels.Contains(ch) {
-				requestLogger.Debug("skipping channel, as it's not in request list", "channel", ch)
-				continue
-			}
-
+		for _, ch := range qr.resolvedChannels {
 			messageSend := &discordgo.MessageSend{
-				Content: request.Text,
+				Content: qr.request.Text,
 			}
 
-			for _, f := range request.Files {
+			for _, f := range qr.request.Files {
 				messageSend.Files = append(messageSend.Files, &discordgo.File{
 					Name:        f.CompleteName(),
 					ContentType: f.ContentType,
