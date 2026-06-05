@@ -41,3 +41,6 @@ __pycache__/
 
 # Config files
 *.toml
+
+# Auth databases
+*.db
