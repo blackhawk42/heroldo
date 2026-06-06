@@ -8,6 +8,8 @@ import (
 	gonanoid "github.com/matoous/go-nanoid/v2"
 )
 
+// IdMiddleware returns an HTTP handler that injects a unique request ID into
+// the context of each incoming request.
 func IdMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID, err := gonanoid.New()
