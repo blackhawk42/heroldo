@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +32,31 @@ func init() {
 	serveCmd.Flags().IntP("concurrency", "w", 5, "Worker goroutine count")
 	serveCmd.Flags().Int64("max-body-size", 50<<20, "Maximum request body size in bytes")
 	serveCmd.Flags().Int("shutdown-timeout", 30, "Shutdown timeout in seconds")
+}
+
+// toStringSlice normalises the channels value across different viper sources:
+// CLI ([]string), config file list ([]any), and env var (comma-separated string).
+func toStringSlice(v any) []string {
+	switch val := v.(type) {
+	case []string:
+		return val
+	case []any:
+		ids := make([]string, 0, len(val))
+		for _, c := range val {
+			if s, ok := c.(string); ok {
+				ids = append(ids, s)
+			}
+		}
+		return ids
+	case string:
+		ids := strings.Split(val, ",")
+		for i := range ids {
+			ids[i] = strings.TrimSpace(ids[i])
+		}
+		return ids
+	default:
+		return nil
+	}
 }
 
 // runServer starts the HTTP server and the Discord session, creates a
