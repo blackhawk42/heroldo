@@ -49,6 +49,18 @@ func initConfig(cmd *cobra.Command) {
 
 	v.BindPFlags(cmd.Flags())
 	v.BindPFlags(cmd.Root().PersistentFlags())
+
+	verboseOutput := v.GetBool("verbose")
+	if verboseOutput {
+		logLvl.Set(slog.LevelDebug)
+	}
+
+	configFileUsed := v.ConfigFileUsed()
+	if configFileUsed == "" {
+		slog.Debug("no config file used")
+	} else {
+		slog.Debug("config file used", "config_file", configFileUsed)
+	}
 }
 
 // toStringSlice normalises the channels value across different viper sources:
@@ -76,11 +88,16 @@ func toStringSlice(v any) []string {
 	}
 }
 
+// logLvl is used to dynamically change the log level
+var logLvl = new(slog.LevelVar)
+
 // main sets up the root cobra command with all required flags and executes it.
 //
 // It configures structured logging to stderr before handling CLI arguments.
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: logLvl,
+	})))
 
 	rootCmd := &cobra.Command{
 		Use:   "heroldo",
@@ -93,6 +110,7 @@ func main() {
 
 	rootCmd.PersistentFlags().StringP("config", "f", "", "Path to custom config file")
 	rootCmd.PersistentFlags().String("auth-db", "", "Path to bbolt authentication database (optional; enables token auth)")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable debug messages")
 
 	rootCmd.AddCommand(serveCmd, tokensCmd)
 
