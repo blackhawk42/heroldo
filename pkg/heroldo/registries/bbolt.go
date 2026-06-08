@@ -1,9 +1,11 @@
 package registries
 
 import (
+	"bytes"
 	"crypto/sha3"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/blackhawk42/heroldo/pkg/heroldo"
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -17,16 +19,22 @@ import (
 // as a Nano ID using the matoous/go-nanoid library.
 //
 // Tokens are doubly-indexed in two different buckets: one that maps the hashed
-// token to its username, and one that maps the username too the token. This means
-// creation and deletion have some extra bookeeping and there's some space overhead,
-// but lookups should remain fast.
+// token to its username, and one that maps the username to the token.
+// This means creation and deletion have some extra bookkeeping
+// and there's some space overhead, but lookups should remain fast.
 //
-// Close should be called after use, to release the associated database. Note that
-// bbolt limitations of concurrent processes apply. If the database is not released,
-// other processes will hang when attempting to get a lock on it.
+// Close closes the underlying database. Close is safe to call multiple times;
+// the underlying database will only be closed once.
+//
+// Note that bbolt limitations of concurrent processes apply. If the database
+// is not released, other processes will hang when attempting to get a lock on it.
 type BBoltTokenRegistry struct {
-	db          *bbolt.DB
-	tokenLength int
+	db           *bbolt.DB
+	usersBucket  []byte
+	tokensBucket []byte
+	tokenLength  int
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 // ErrTokensBucketDoesNotExist is returned when the tokens bucket is missing
@@ -37,29 +45,48 @@ var ErrTokensBucketDoesNotExist = errors.New("tokens bucket does not exist")
 // the database.
 var ErrUsersBucketDoesNotExist = errors.New("users bucket does not exist")
 
-// NewBBoltTokenRegistry opens or creates a bbolt database at the given path
-// and returns a BBoltTokenRegistry.
+// NewBBoltTokenRegistry creates a BBoltTokenRegistry backed by the given
+// pre-opened bbolt database.
 //
 // If tokenLength is <= 0, it defaults to 64.
-func NewBBoltTokenRegistry(path string, bboltOptions *bbolt.Options, tokenLength int) (*BBoltTokenRegistry, error) {
+//
+// If usersBucket or tokensBucket are nil, default values are []byte("users")
+// and []byte("tokens"), respectively. Making them equal is an error (unless they're
+// both nil). Both parameters are internally copied before use.
+func NewBBoltTokenRegistry(db *bbolt.DB, tokenLength int, usersBucket []byte, tokensBucket []byte) (*BBoltTokenRegistry, error) {
+	if db == nil {
+		return nil, fmt.Errorf("a non-nil bbolt database must be provided")
+	}
+
 	if tokenLength <= 0 {
 		tokenLength = 64
 	}
 
-	db, err := bbolt.Open(path, 0600, bboltOptions)
-	if err != nil {
-		return nil, fmt.Errorf("while opening bbolt-based registry: %w", err)
+	if usersBucket == nil {
+		usersBucket = []byte("users")
+	} else {
+		usersBucket = bytes.Clone(usersBucket)
+	}
+
+	if tokensBucket == nil {
+		tokensBucket = []byte("tokens")
+	} else {
+		tokensBucket = bytes.Clone(tokensBucket)
+	}
+
+	if bytes.Equal(usersBucket, tokensBucket) {
+		return nil, fmt.Errorf("usersBucket and tokensBucket should not be equal")
 	}
 
 	// The tokens bucket is meant to be keyed by token hash.
 	// The users bucket by username
-	err = db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte("tokens"))
+	err := db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(tokensBucket)
 		if err != nil {
 			return fmt.Errorf("while creating tokens bucket: %w", err)
 		}
 
-		_, err = tx.CreateBucketIfNotExists([]byte("users"))
+		_, err = tx.CreateBucketIfNotExists(usersBucket)
 		if err != nil {
 			return fmt.Errorf("while creating users bucket: %w", err)
 		}
@@ -70,7 +97,13 @@ func NewBBoltTokenRegistry(path string, bboltOptions *bbolt.Options, tokenLength
 		return nil, fmt.Errorf("while creating initial buckets: %w", err)
 	}
 
-	return &BBoltTokenRegistry{db: db, tokenLength: tokenLength}, nil
+	return &BBoltTokenRegistry{
+		db:           db,
+		tokenLength:  tokenLength,
+		usersBucket:  usersBucket,
+		tokensBucket: tokensBucket,
+		closeErr:     nil,
+	}, nil
 }
 
 // NewToken generates a new random token for the given username, stores its
@@ -79,9 +112,17 @@ func NewBBoltTokenRegistry(path string, bboltOptions *bbolt.Options, tokenLength
 // If the given username already had a token associated with it, it will be
 // deleted and overwritten.
 //
-// Note that the actual token is not recoverable, by design. This return value
-// is the only chance to record or present it before it's lost.
+// An empty username returns an error.
+//
+// Note that the actual token is not recoverable, by design. This return
+// value is the only chance to record or present it before it's lost. If
+// a token is lost, you'll have to create a new one for the same user,
+// overwriting the existing one.
 func (bbr *BBoltTokenRegistry) NewToken(username string) (string, error) {
+	if username == "" {
+		return "", fmt.Errorf("username must not be empty")
+	}
+
 	token, err := gonanoid.New(bbr.tokenLength)
 	if err != nil {
 		return "", fmt.Errorf("while generating token: %w", err)
@@ -90,12 +131,12 @@ func (bbr *BBoltTokenRegistry) NewToken(username string) (string, error) {
 	hash := sha3.Sum256([]byte(token))
 
 	err = bbr.db.Batch(func(tx *bbolt.Tx) error {
-		tokensBucket := tx.Bucket([]byte("tokens"))
+		tokensBucket := tx.Bucket(bbr.tokensBucket)
 		if tokensBucket == nil {
 			return ErrTokensBucketDoesNotExist
 		}
 
-		usersBucket := tx.Bucket([]byte("users"))
+		usersBucket := tx.Bucket(bbr.usersBucket)
 		if usersBucket == nil {
 			return ErrUsersBucketDoesNotExist
 		}
@@ -140,7 +181,7 @@ func (bbr *BBoltTokenRegistry) VerifyToken(token string) (string, error) {
 	savedUser := ""
 
 	err := bbr.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte("tokens"))
+		bucket := tx.Bucket(bbr.tokensBucket)
 		if bucket == nil {
 			return ErrTokensBucketDoesNotExist
 		}
@@ -163,7 +204,7 @@ func (bbr *BBoltTokenRegistry) ListTokens() ([]heroldo.TokenRegistryEntry, error
 	var entries []heroldo.TokenRegistryEntry
 
 	err := bbr.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte("users"))
+		bucket := tx.Bucket(bbr.usersBucket)
 		if bucket == nil {
 			return ErrUsersBucketDoesNotExist
 		}
@@ -196,12 +237,12 @@ func (bbr *BBoltTokenRegistry) DeleteTokenByUsername(username string) error {
 	usernameBytes := []byte(username)
 
 	err := bbr.db.Batch(func(tx *bbolt.Tx) error {
-		tokensBucket := tx.Bucket([]byte("tokens"))
+		tokensBucket := tx.Bucket(bbr.tokensBucket)
 		if tokensBucket == nil {
 			return ErrTokensBucketDoesNotExist
 		}
 
-		usersBucket := tx.Bucket([]byte("users"))
+		usersBucket := tx.Bucket(bbr.usersBucket)
 		if usersBucket == nil {
 			return ErrUsersBucketDoesNotExist
 		}
@@ -239,12 +280,12 @@ func (bbr *BBoltTokenRegistry) DeleteTokenByToken(token string) error {
 	tokenBytes := tokenHash[:]
 
 	err := bbr.db.Batch(func(tx *bbolt.Tx) error {
-		tokensBucket := tx.Bucket([]byte("tokens"))
+		tokensBucket := tx.Bucket(bbr.tokensBucket)
 		if tokensBucket == nil {
 			return ErrTokensBucketDoesNotExist
 		}
 
-		usersBucket := tx.Bucket([]byte("users"))
+		usersBucket := tx.Bucket(bbr.usersBucket)
 		if usersBucket == nil {
 			return ErrUsersBucketDoesNotExist
 		}
@@ -274,11 +315,25 @@ func (bbr *BBoltTokenRegistry) DeleteTokenByToken(token string) error {
 }
 
 // Close closes the underlying bbolt database.
+//
+// Close is safe to call multiple times; the underlying database will only
+// be closed once.
+//
+// There may be reasons not to call this method (e. g., if the same underlying
+// database is being used for other purposes). It's the caller's responsibility
+// to determine this. It is safe to close the database externally and then do it
+// through here.
 func (bbr *BBoltTokenRegistry) Close() error {
-	err := bbr.db.Close()
-	if err != nil {
-		return fmt.Errorf("while closing the bbolt-based registry: %w", err)
-	}
+	// NOTE: It is currently true that a bbolt database is safe to close multiple
+	// times, even without guard. That's why I give the last guarantee in the documentation.
+	// But this is not explicitly documented or guaranteed on their part. bbolt
+	// is a very stable project, but this needs an eye to be kept on it.
 
-	return nil
+	bbr.closeOnce.Do(func() {
+		err := bbr.db.Close()
+		if err != nil {
+			bbr.closeErr = fmt.Errorf("while closing the bbolt-based registry: %w", err)
+		}
+	})
+	return bbr.closeErr
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/blackhawk42/heroldo/pkg/heroldo/registries"
 	"github.com/spf13/cobra"
+	"go.etcd.io/bbolt"
 )
 
 var tokensCmd = &cobra.Command{
@@ -100,5 +101,16 @@ func openRegistry() (*registries.BBoltTokenRegistry, error) {
 	if authDBPath == "" {
 		return nil, fmt.Errorf("auth-db must be set to manage tokens")
 	}
-	return registries.NewBBoltTokenRegistry(authDBPath, nil, 0)
+
+	db, err := bbolt.Open(authDBPath, 0600, bbolt.DefaultOptions)
+	if err != nil {
+		return nil, fmt.Errorf("while opening bbolt-based registry: %w", err)
+	}
+
+	registry, err := registries.NewBBoltTokenRegistry(db, 0, nil, nil)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return registry, nil
 }

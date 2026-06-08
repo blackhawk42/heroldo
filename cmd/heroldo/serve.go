@@ -17,6 +17,7 @@ import (
 	"github.com/blackhawk42/heroldo/pkg/heroldo/registries"
 	"github.com/bwmarrin/discordgo"
 	"github.com/spf13/cobra"
+	"go.etcd.io/bbolt"
 )
 
 var serveCmd = &cobra.Command{
@@ -99,8 +100,14 @@ func runServer(cmd *cobra.Command, _ []string) error {
 
 	authDBPath := v.GetString("auth-db")
 	if authDBPath != "" {
-		registry, err := registries.NewBBoltTokenRegistry(authDBPath, nil, 0)
+		db, err := bbolt.Open(authDBPath, 0600, bbolt.DefaultOptions)
 		if err != nil {
+			return fmt.Errorf("while opening bbolt-based registry: %w", err)
+		}
+
+		registry, err := registries.NewBBoltTokenRegistry(db, 0, nil, nil)
+		if err != nil {
+			db.Close()
 			return err
 		}
 		defer registry.Close()
@@ -115,17 +122,24 @@ func runServer(cmd *cobra.Command, _ []string) error {
 		Handler: handler,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("starting HTTP server", "addr", listenAddr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("HTTP server error", "error", err)
-			os.Exit(1)
+			errCh <- err
+			return
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	select {
+	case <-quit:
+	case err := <-errCh:
+		slog.Error("HTTP server error", "error", err)
+		return fmt.Errorf("HTTP server error: %w", err)
+	}
 
 	slog.Info("shutting down...")
 
@@ -134,10 +148,12 @@ func runServer(cmd *cobra.Command, _ []string) error {
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("HTTP server shutdown error", "error", err)
+		return fmt.Errorf("HTTP server shutdown error: %w", err)
 	}
 
 	if err := sender.Close(shutdownCtx); err != nil {
 		slog.Error("Discord sender close error", "error", err)
+		return fmt.Errorf("Discord sender close error: %w", err)
 	}
 
 	return nil
