@@ -24,6 +24,7 @@ func TokenAuthMiddleware(next http.Handler, tokenRegistry heroldo.TokenRegistry)
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeError(w, logger, http.StatusUnauthorized, requestID, "authorization token not provided", "authorization token not provided")
 			return
 		}
@@ -43,6 +44,7 @@ func TokenAuthMiddleware(next http.Handler, tokenRegistry heroldo.TokenRegistry)
 		}
 
 		if user == "" {
+			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeError(w, logger, http.StatusUnauthorized, requestID, "token is not authorized", "token is not authorized")
 			return
 		}
