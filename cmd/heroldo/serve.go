@@ -32,7 +32,7 @@ func init() {
 	serveCmd.Flags().IntP("port", "p", 8080, "HTTP server port")
 	serveCmd.Flags().IntP("concurrency", "w", 5, "Worker goroutine count")
 	serveCmd.Flags().Int64("max-body-size", 50<<20, "Maximum request body size in bytes")
-	serveCmd.Flags().Int("shutdown-timeout", 30, "Shutdown timeout in seconds")
+	serveCmd.Flags().Duration("shutdown-timeout", 30*time.Second, "Shutdown timeout in duration format used by time.ParseDuration (e. g.: 300ms, 5s, 1h10m10s)")
 }
 
 // toStringSlice normalises the channels value across different viper sources:
@@ -79,7 +79,7 @@ func runServer(cmd *cobra.Command, _ []string) error {
 	port := v.GetInt("port")
 	concurrency := v.GetInt("concurrency")
 	maxBodySize := v.GetInt64("max-body-size")
-	shutdownTimeout := time.Duration(v.GetInt("shutdown-timeout")) * time.Second
+	shutdownTimeout := v.GetDuration("shutdown-timeout")
 
 	listenAddr := ":" + strconv.Itoa(port)
 
